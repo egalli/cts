@@ -29,6 +29,31 @@ const resultsJSON = document.getElementById('resultsJSON')!;
 
 type RunSubtree = () => Promise<void>;
 
+type CreateRunSubtree = () => RunSubtree;
+
+class LazyRunner {
+  private runner?: RunSubtree;
+  private creator: CreateRunSubtree;
+
+  run: RunSubtree;
+
+  constructor(creator: CreateRunSubtree) {
+    this.creator = creator;
+    this.run = function (this: LazyRunner) {
+      if (this.runner === undefined) {
+        this.runner = this.creator();
+      }
+      return this.runner();
+    }.bind(this);
+  }
+
+  create() {
+    if (this.runner === undefined) {
+      this.runner = this.creator();
+    }
+  }
+}
+
 // DOM generation
 
 function makeTreeNodeHTML(
@@ -92,10 +117,21 @@ function makeSubtreeHTML(n: TestSubtree, parentLevel: TestQueryLevel): [HTMLElem
   const div = $('<div>').addClass('subtree');
 
   const subtreeHTML = $('<div>').addClass('subtreechildren');
-  const runSubtree = makeSubtreeChildrenHTML(subtreeHTML[0], n.children.values(), n.query.level);
+  const lazyRunSubtree = new LazyRunner(() => {
+    return makeSubtreeChildrenHTML(subtreeHTML[0], n.children.values(), n.query.level);
+  });
+  if (n.query.level <= 2) {
+    lazyRunSubtree.create();
+  }
+  const runSubtree = lazyRunSubtree.run;
 
   const header = makeTreeNodeHeaderHTML(n, runSubtree, parentLevel, checked => {
-    checked ? subtreeHTML.show() : subtreeHTML.hide();
+    if (checked) {
+      lazyRunSubtree.create();
+      subtreeHTML.show();
+    } else {
+      subtreeHTML.hide();
+    }
   });
 
   div.append(header);
