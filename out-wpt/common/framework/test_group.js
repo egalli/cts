@@ -1,21 +1,9 @@
 /**
  * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
- **/ function _defineProperty(obj, key, value) {
-  if (key in obj) {
-    Object.defineProperty(obj, key, {
-      value: value,
-      enumerable: true,
-      configurable: true,
-      writable: true,
-    });
-  } else {
-    obj[key] = value;
-  }
-  return obj;
-}
-import { extractPublicParams, publicParamsEquals } from './params_utils.js';
+ **/ import { SkipTestCase } from './fixture.js';
+import { extractPublicParams, mergeParams } from './params_utils.js';
 import { kPathSeparator } from './query/separators.js';
-import { stringifyPublicParams } from './query/stringify_params.js';
+import { stringifyPublicParams, stringifyPublicParamsUniquely } from './query/stringify_params.js';
 import { validQueryPart } from './query/validQueryPart.js';
 import { assert } from './util/util.js';
 
@@ -23,24 +11,22 @@ export function makeTestGroup(fixture) {
   return new TestGroup(fixture);
 }
 
-// Interface for running tests
+// Interfaces for running tests
 
 export function makeTestGroupForUnitTesting(fixture) {
   return new TestGroup(fixture);
 }
 
 class TestGroup {
+  seen = new Set();
+  tests = [];
+
   constructor(fixture) {
-    _defineProperty(this, 'fixture', void 0);
-    _defineProperty(this, 'seen', new Set());
-    _defineProperty(this, 'tests', []);
     this.fixture = fixture;
   }
 
-  *iterate() {
-    for (const test of this.tests) {
-      yield* test.iterate();
-    }
+  iterate() {
+    return this.tests;
   }
 
   checkName(name) {
@@ -58,6 +44,8 @@ class TestGroup {
 
   // TODO: This could take a fixture, too, to override the one for the group.
   test(name) {
+    const testCreationStack = new Error(`Test created: ${name}`);
+
     this.checkName(name);
 
     const parts = name.split(kPathSeparator);
@@ -65,82 +53,127 @@ class TestGroup {
       assert(validQueryPart.test(p), `Invalid test name part ${p}; must match ${validQueryPart}`);
     }
 
-    const test = new TestBuilder(parts, this.fixture);
+    const test = new TestBuilder(parts, this.fixture, testCreationStack);
     this.tests.push(test);
     return test;
   }
 
-  checkCaseNamesAndDuplicates() {
+  validate() {
     for (const test of this.tests) {
-      test.checkCaseNamesAndDuplicates();
+      test.validate();
     }
   }
 }
 
 class TestBuilder {
-  constructor(testPath, fixture) {
-    _defineProperty(this, 'testPath', void 0);
-    _defineProperty(this, 'fixture', void 0);
-    _defineProperty(this, 'testFn', void 0);
-    _defineProperty(this, 'cases', undefined);
+  caseParams = undefined;
+  subcaseParams = undefined;
+
+  constructor(testPath, fixture, testCreationStack) {
     this.testPath = testPath;
     this.fixture = fixture;
+    this.testCreationStack = testCreationStack;
+  }
+
+  desc(description) {
+    this.description = description.trim();
+    return this;
   }
 
   fn(fn) {
+    // TODO: add TODO if there's no description? (and make sure it only ends up on actual tests,
+    // not on test parents in the tree, which is what happens if you do it here, not sure why)
+    assert(this.testFn === undefined);
     this.testFn = fn;
   }
 
-  checkCaseNamesAndDuplicates() {
-    if (this.cases === undefined) {
+  unimplemented() {
+    assert(this.testFn === undefined);
+
+    this.description =
+      (this.description ? this.description + '\n\n' : '') + 'TODO: .unimplemented()';
+
+    this.testFn = () => {
+      throw new SkipTestCase('test unimplemented');
+    };
+  }
+
+  validate() {
+    const testPathString = this.testPath.join(kPathSeparator);
+    assert(this.testFn !== undefined, () => {
+      let s = `Test is missing .fn(): ${testPathString}`;
+      if (this.testCreationStack.stack) {
+        s += `\n-> test created at:\n${this.testCreationStack.stack}`;
+      }
+      return s;
+    });
+
+    if (this.caseParams === undefined) {
       return;
     }
 
-    // This is n^2.
-    const seen = [];
-    for (const testcase of this.cases) {
+    const seen = new Set();
+    for (const testcase of this.caseParams) {
       // stringifyPublicParams also checks for invalid params values
       const testcaseString = stringifyPublicParams(testcase);
+
+      // A (hopefully) unique representation of a params value.
+      const testcaseStringUnique = stringifyPublicParamsUniquely(testcase);
       assert(
-        !seen.some(x => publicParamsEquals(x, testcase)),
-        `Duplicate public test case params: ${testcaseString}`
+        !seen.has(testcaseStringUnique),
+        `Duplicate public test case params for test ${testPathString}: ${testcaseString}`
       );
 
-      seen.push(testcase);
+      seen.add(testcaseStringUnique);
     }
   }
 
   params(casesIterable) {
-    assert(this.cases === undefined, 'test case is already parameterized');
-    this.cases = Array.from(casesIterable);
+    return this.cases(casesIterable);
+  }
 
-    return this;
+  cases(casesIterable) {
+    assert(this.caseParams === undefined, 'test case is already parameterized');
+    const newSelf = this;
+    newSelf.caseParams = Array.from(casesIterable);
+
+    return newSelf;
+  }
+
+  subcases(specs) {
+    assert(this.subcaseParams === undefined, 'test subcases are already parameterized');
+    const newSelf = this;
+    newSelf.subcaseParams = specs;
+
+    return newSelf;
   }
 
   *iterate() {
     assert(this.testFn !== undefined, 'No test function (.fn()) for test');
-    for (const params of this.cases || [{}]) {
-      yield new RunCaseSpecific(this.testPath, params, this.fixture, this.testFn);
+    for (const params of this.caseParams || [{}]) {
+      yield new RunCaseSpecific(
+        this.testPath,
+        params,
+        this.subcaseParams,
+        this.fixture,
+        this.testFn
+      );
     }
   }
 }
 
 class RunCaseSpecific {
-  constructor(testPath, params, fixture, fn) {
-    _defineProperty(this, 'id', void 0);
-    _defineProperty(this, 'params', void 0);
-    _defineProperty(this, 'fixture', void 0);
-    _defineProperty(this, 'fn', void 0);
+  constructor(testPath, params, subParamGen, fixture, fn) {
     this.id = { test: testPath, params: extractPublicParams(params) };
     this.params = params;
+    this.subParamGen = subParamGen;
     this.fixture = fixture;
     this.fn = fn;
   }
 
-  async run(rec) {
-    rec.start();
+  async runTest(rec, params, throwSkip) {
     try {
-      const inst = new this.fixture(rec, this.params || {});
+      const inst = new this.fixture(rec, params);
 
       try {
         await inst.init();
@@ -155,7 +188,40 @@ class RunCaseSpecific {
       // An error from init or test may have been a SkipTestCase.
       // An error from finalize may have been an eventualAsyncExpectation failure
       // or unexpected validation/OOM error from the GPUDevice.
+      if (throwSkip && ex instanceof SkipTestCase) {
+        throw ex;
+      }
       rec.threw(ex);
+    }
+  }
+
+  async run(rec) {
+    rec.start();
+    if (this.subParamGen) {
+      let totalCount = 0;
+      let skipCount = 0;
+      for (const subParams of this.subParamGen(this.params)) {
+        rec.info(new Error('subcase: ' + stringifyPublicParams(subParams)));
+        try {
+          await this.runTest(rec, mergeParams(this.params, subParams), true);
+        } catch (ex) {
+          if (ex instanceof SkipTestCase) {
+            // Convert SkipTestCase to info messages
+            ex.message = 'subcase skipped: ' + ex.message;
+            rec.info(ex);
+            ++skipCount;
+          } else {
+            // Since we are catching all error inside runTest(), this should never happen
+            rec.threw(ex);
+          }
+        }
+        ++totalCount;
+      }
+      if (skipCount === totalCount) {
+        rec.skipped(new SkipTestCase('all subcases were skipped'));
+      }
+    } else {
+      await this.runTest(rec, this.params, false);
     }
     rec.finish();
   }

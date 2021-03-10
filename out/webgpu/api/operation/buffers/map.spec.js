@@ -1,6 +1,15 @@
 /**
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
-**/export const description = '';import { pbool, params } from '../../../../common/framework/params_builder.js';
+**/export const description = `
+TODO: review and make sure these cases are covered:
+> - making sure writes/reads are to the right address (and get flushed)
+>     - TODO: various mapAsync offset/size
+>     - various getMappedRange offset/size
+>     - TODO: with non-overlapping getMappedRanges
+>     - TODO: with various TypedArray/DataView types
+>     - TODO: mapAsync is not a multiple of 8 but getMappedRange is, if that's allowed (probably won't be allowed, there's an issue in the spec about this)
+>     - x= {read, write, mappedAtCreation {mappable, non-mappable}}
+`;import { pbool, params } from '../../../../common/framework/params_builder.js';
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { assert } from '../../../../common/framework/util/util.js';
 
@@ -30,9 +39,9 @@ const kCases = [
 { size: 512 * 1024, range: [] }];
 
 
-function reifyMapRange(bufferSize, range) {var _range$, _range$2;
-  const offset = (_range$ = range[0]) !== null && _range$ !== void 0 ? _range$ : 0;
-  return [offset, (_range$2 = range[1]) !== null && _range$2 !== void 0 ? _range$2 : bufferSize - offset];
+function reifyMapRange(bufferSize, range) {
+  const offset = range[0] ?? 0;
+  return [offset, range[1] ?? bufferSize - offset];
 }
 
 g.test('mapAsync,write').
@@ -83,7 +92,7 @@ params().
 combine(kCases) //
 .combine(pbool('mappable'))).
 
-fn(async t => {var _range$3;
+fn(async t => {
   const { size, range, mappable } = t.params;
   const [, rangeSize] = reifyMapRange(size, range);
 
@@ -93,6 +102,6 @@ fn(async t => {var _range$3;
     usage: GPUBufferUsage.COPY_SRC | (mappable ? GPUBufferUsage.MAP_WRITE : 0) });
 
   const arrayBuffer = buffer.getMappedRange(...range);
-  t.checkMapWrite(buffer, (_range$3 = range[0]) !== null && _range$3 !== void 0 ? _range$3 : 0, arrayBuffer, rangeSize);
+  t.checkMapWrite(buffer, range[0] ?? 0, arrayBuffer, rangeSize);
 });
 //# sourceMappingURL=map.spec.js.map

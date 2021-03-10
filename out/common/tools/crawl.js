@@ -6,6 +6,7 @@
 import * as fs from 'fs';import * as path from 'path';
 
 
+import { validQueryPart } from '../framework/query/validQueryPart.js';
 
 import { assert, unreachable } from '../framework/util/util.js';
 
@@ -31,13 +32,23 @@ export async function crawl(suite) {
       const filepathWithoutExtension = f.substring(0, f.length - specFileSuffix.length);
       const filename = `../../../${suiteDir}/${filepathWithoutExtension}.spec.js`;
 
-      const mod = await import(filename);
+      let mod;
+      if (process.env.STANDALONE_DEV_SERVER) {
+        mod = require(filename);
+        // Delete the cache so that changes to the file are picked up.
+        delete require.cache[require.resolve(filename)];
+      } else {
+        mod = await import(filename);
+      }
       assert(mod.description !== undefined, 'Test spec file missing description: ' + filename);
       assert(mod.g !== undefined, 'Test spec file missing TestGroup definition: ' + filename);
 
-      mod.g.checkCaseNamesAndDuplicates();
+      mod.g.validate();
 
       const path = filepathWithoutExtension.split('/');
+      for (const p of path) {
+        assert(validQueryPart.test(p), `Invalid directory name ${p}; must match ${validQueryPart}`);
+      }
       entries.push({ file: path, description: mod.description.trim() });
     } else if (path.basename(file) === 'README.txt') {
       const filepathWithoutExtension = f.substring(0, f.length - '/README.txt'.length);

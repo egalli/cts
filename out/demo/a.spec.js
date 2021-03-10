@@ -4,4 +4,6 @@
 import { UnitTest } from '../unittests/unit_test.js';
 
 export const g = makeTestGroup(UnitTest);
+
+g.test('not_implemented_yet').unimplemented();
 //# sourceMappingURL=a.spec.js.map

@@ -8,14 +8,18 @@ export class SkipTestCase extends Error {}
 // A new instance of the Fixture is created for every single test case
 // (i.e. every time the test function is run).
 export class Fixture {
-  params: unknown;
+  private _params: unknown;
   protected rec: TestCaseRecorder;
   private eventualExpectations: Array<Promise<unknown>> = [];
   private numOutstandingAsyncExpectations = 0;
 
   constructor(rec: TestCaseRecorder, params: CaseParams) {
     this.rec = rec;
-    this.params = params;
+    this._params = params;
+  }
+
+  get params(): unknown {
+    return this._params;
   }
 
   // This has to be a member function instead of an async `createFixture` function, because
@@ -33,9 +37,18 @@ export class Fixture {
   async finalize(): Promise<void> {
     assert(
       this.numOutstandingAsyncExpectations === 0,
-      'there were outstanding asynchronous expectations (e.g. shouldReject) at the end of the test'
+      'there were outstanding immediateAsyncExpectations (e.g. expectUncapturedError) at the end of the test'
     );
-    await Promise.all(this.eventualExpectations);
+
+    // Loop to exhaust the eventualExpectations in case they chain off each other.
+    while (this.eventualExpectations.length) {
+      const p = this.eventualExpectations.shift()!;
+      try {
+        await p;
+      } catch (ex) {
+        this.rec.threw(ex);
+      }
+    }
   }
 
   warn(msg?: string): void {
@@ -70,7 +83,7 @@ export class Fixture {
       niceStack.message = `THREW ${actualName}, instead of ${expectedName}: ${ex}`;
       this.rec.expectationFailed(niceStack);
     } else {
-      niceStack.message = `OK: threw ${actualName}${ex.message}`;
+      niceStack.message = `OK: threw ${actualName}: ${ex.message}`;
       this.rec.debug(niceStack);
     }
   }

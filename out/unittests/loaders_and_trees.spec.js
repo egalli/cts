@@ -1,6 +1,6 @@
 /**
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
-**/function _defineProperty(obj, key, value) {if (key in obj) {Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true });} else {obj[key] = value;}return obj;}export const description = `
+**/export const description = `
 Tests for queries/filtering, loading, and running.
 `;import { TestFileLoader } from '../common/framework/file_loader.js';
 import { Logger } from '../common/framework/logging/logger.js';
@@ -24,7 +24,8 @@ const listingData = {
   suite1: [
   { file: [], readme: 'desc 1a' },
   { file: ['foo'], description: 'desc 1b' },
-  { file: ['bar'], readme: 'desc 1c' },
+  { file: ['bar'], readme: 'desc 1h' },
+  { file: ['bar', 'biz'], description: 'desc 1f' },
   { file: ['bar', 'buzz', 'buzz'], description: 'desc 1d' },
   { file: ['baz'], description: 'desc 1e' }],
 
@@ -47,10 +48,6 @@ const specsData = {
 
   'suite1/bar/biz.spec.js': {
     description: 'desc 1f',
-    g: makeTestGroupForUnitTesting(UnitTest) },
-
-  'suite1/bar/bez.spec.js': {
-    description: 'desc 1g',
     g: makeTestGroupForUnitTesting(UnitTest) },
 
   'suite1/bar/buzz/buzz.spec.js': {
@@ -110,7 +107,7 @@ class FakeTestFileLoader extends TestFileLoader {
 
 
 class LoadingTest extends UnitTest {
-
+  static loader = new FakeTestFileLoader();
 
   async load(query) {
     return Array.from(await LoadingTest.loader.loadCases(parseQuery(query)));
@@ -118,7 +115,7 @@ class LoadingTest extends UnitTest {
 
   async loadNames(query) {
     return (await this.load(query)).map(c => c.query.toString());
-  }}_defineProperty(LoadingTest, "loader", new FakeTestFileLoader());
+  }}
 
 
 export const g = makeTestGroup(LoadingTest);
@@ -349,13 +346,13 @@ g.test('iterateCollapsed').fn(async t => {
   await testIterateCollapsed(t, ['garbage*'], 'throws');
   await testIterateCollapsed(t, ['suite1*'], 'throws');
   await testIterateCollapsed(t, ['suite1:foo*'], 'throws');
-  await testIterateCollapsed(t, ['suite1:foo:ba*'], 'throws');
+  await testIterateCollapsed(t, ['suite1:foo:he*'], 'throws');
 
   // Valid expectation queries but they don't match anything
   await testIterateCollapsed(t, ['garbage:*'], 'throws');
   await testIterateCollapsed(t, ['suite1:doesntexist:*'], 'throws');
   await testIterateCollapsed(t, ['suite2:foo:*'], 'throws');
-  // Doesn't match anything because we collapse this unnecessary node into just 'suite1:foo:*'
-  await testIterateCollapsed(t, ['suite1:foo,*'], 'throws');
+  // Can't expand subqueries bigger than one suite.
+  await testIterateCollapsed(t, ['suite1:bar,*'], 'throws');
 });
 //# sourceMappingURL=loaders_and_trees.spec.js.map

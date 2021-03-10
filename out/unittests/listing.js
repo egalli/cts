@@ -7,9 +7,9 @@ export const listing = [
   },
   {
     "file": [
-      "async_mutex"
+      "async_expectations"
     ],
-    "description": "Tests for AsyncMutex."
+    "description": "Tests for eventualAsyncExpectation and immediateAsyncExpectation."
   },
   {
     "file": [
@@ -46,6 +46,12 @@ export const listing = [
       "params_builder_toplevel"
     ],
     "description": "Unit tests for parameterization."
+  },
+  {
+    "file": [
+      "preprocessor"
+    ],
+    "description": "Test for \"pp\" preprocessor."
   },
   {
     "file": [

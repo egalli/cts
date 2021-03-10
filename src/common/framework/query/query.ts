@@ -2,7 +2,7 @@ import { CaseParams } from '../params_utils.js';
 import { assert } from '../util/util.js';
 
 import { encodeURIComponentSelectively } from './encode_selectively.js';
-import { kBigSeparator, kPathSeparator, kWildcard, kParamSeparator } from './separators.js';
+import { kBigSeparator, kPathSeparator, kWildcard } from './separators.js';
 import { stringifyPublicParams } from './stringify_params.js';
 
 /**
@@ -38,6 +38,10 @@ export class TestQueryMultiFile {
     this.filePathParts = [...file];
   }
 
+  get depthInLevel() {
+    return this.filePathParts.length;
+  }
+
   toString(): string {
     return encodeURIComponentSelectively(this.toStringHelper().join(kBigSeparator));
   }
@@ -62,6 +66,10 @@ export class TestQueryMultiTest extends TestQueryMultiFile {
     super(suite, file);
     assert(file.length > 0, 'multi-test (or finer) query must have file-path');
     this.testPathParts = [...test];
+  }
+
+  get depthInLevel() {
+    return this.testPathParts.length;
   }
 
   protected toStringHelper(): string[] {
@@ -91,13 +99,16 @@ export class TestQueryMultiCase extends TestQueryMultiTest {
     this.params = { ...params };
   }
 
+  get depthInLevel() {
+    return Object.keys(this.params).length;
+  }
+
   protected toStringHelper(): string[] {
-    const paramsParts = stringifyPublicParams(this.params);
     return [
       this.suite,
       this.filePathParts.join(kPathSeparator),
       this.testPathParts.join(kPathSeparator),
-      [...paramsParts, kWildcard].join(kParamSeparator),
+      stringifyPublicParams(this.params, true),
     ];
   }
 }
@@ -111,13 +122,16 @@ export class TestQuerySingleCase extends TestQueryMultiCase {
   readonly level: TestQueryLevel = 4;
   readonly isMultiCase: false = false;
 
+  get depthInLevel() {
+    return 0;
+  }
+
   protected toStringHelper(): string[] {
-    const paramsParts = stringifyPublicParams(this.params);
     return [
       this.suite,
       this.filePathParts.join(kPathSeparator),
       this.testPathParts.join(kPathSeparator),
-      paramsParts.join(kParamSeparator),
+      stringifyPublicParams(this.params),
     ];
   }
 }

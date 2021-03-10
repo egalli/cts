@@ -1,18 +1,6 @@
 /**
  * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
- **/ function _defineProperty(obj, key, value) {
-  if (key in obj) {
-    Object.defineProperty(obj, key, {
-      value: value,
-      enumerable: true,
-      configurable: true,
-      writable: true,
-    });
-  } else {
-    obj[key] = value;
-  }
-  return obj;
-}
+ **/
 import { compareQueries, Ordering } from './query/compare.js';
 import {
   TestQueryMultiCase,
@@ -51,7 +39,6 @@ import { assert } from './util/util.js';
 
 export class TestTree {
   constructor(root) {
-    _defineProperty(this, 'root', void 0);
     this.root = root;
   }
 
@@ -72,7 +59,7 @@ export class TestTree {
    * which is less needlessly verbose when displaying the tree in the standalone runner.
    */
   dissolveLevelBoundaries() {
-    const newRoot = dissolveLevelBoundaries(this.root);
+    const newRoot = dissolveSingleChildTrees(this.root);
     assert(newRoot === this.root);
   }
 
@@ -82,9 +69,16 @@ export class TestTree {
 
   static *iterateSubtreeCollapsedQueries(subtree) {
     for (const [, child] of subtree.children) {
-      if ('children' in child && !child.collapsible) {
-        yield* TestTree.iterateSubtreeCollapsedQueries(child);
+      if ('children' in child) {
+        // Is a subtree
+        if (!child.collapsible) {
+          yield* TestTree.iterateSubtreeCollapsedQueries(child);
+        } else if (child.children.size) {
+          // Don't yield empty subtrees (e.g. files with no tests)
+          yield child.query;
+        }
       } else {
+        // Is a leaf
         yield child.query;
       }
     }
@@ -179,25 +173,42 @@ export async function loadTreeForQuery(loader, queryToLoad, subqueriesToExpand) 
     // subtreeL1 is suite:a,b:*
     const subtreeL1 = addSubtreeForFilePath(subtreeL0, entry.file, description, isCollapsible);
 
-    // TODO: If tree generation gets too slow, avoid actually iterating the cases in a file
-    // if there's no need to (based on the subqueriesToExpand).
     for (const t of spec.g.iterate()) {
       {
-        const queryL3 = new TestQuerySingleCase(suite, entry.file, t.id.test, t.id.params);
-        const orderingL3 = compareQueries(queryL3, queryToLoad);
-        if (orderingL3 === Ordering.Unordered || orderingL3 === Ordering.StrictSuperset) {
-          // Case is not matched by this query.
+        const queryL2 = new TestQueryMultiCase(suite, entry.file, t.testPath, {});
+        const orderingL2 = compareQueries(queryL2, queryToLoad);
+        if (orderingL2 === Ordering.Unordered) {
+          // Test path is not matched by this query.
           continue;
         }
       }
 
       // subtreeL2 is suite:a,b:c,d:*
-      const subtreeL2 = addSubtreeForTestPath(subtreeL1, t.id.test, isCollapsible);
+      const subtreeL2 = addSubtreeForTestPath(
+        subtreeL1,
+        t.testPath,
+        t.description,
+        t.testCreationStack,
+        isCollapsible
+      );
 
-      // Leaf for case is suite:a,b:c,d:x=1;y=2
-      addLeafForCase(subtreeL2, t, isCollapsible);
+      // TODO: If tree generation gets too slow, avoid actually iterating the cases in a file
+      // if there's no need to (based on the subqueriesToExpand).
+      for (const c of t.iterate()) {
+        {
+          const queryL3 = new TestQuerySingleCase(suite, entry.file, c.id.test, c.id.params);
+          const orderingL3 = compareQueries(queryL3, queryToLoad);
+          if (orderingL3 === Ordering.Unordered || orderingL3 === Ordering.StrictSuperset) {
+            // Case is not matched by this query.
+            continue;
+          }
+        }
 
-      foundCase = true;
+        // Leaf for case is suite:a,b:c,d:x=1;y=2
+        addLeafForCase(subtreeL2, c, isCollapsible);
+
+        foundCase = true;
+      }
     }
   }
 
@@ -205,8 +216,8 @@ export async function loadTreeForQuery(loader, queryToLoad, subqueriesToExpand) 
     const seen = seenSubqueriesToExpand[i];
     assert(
       seen,
-      `subqueriesToExpand entry did not match anything \
-(can happen due to overlap with another subquery): ${sq.toString()}`
+      `subqueriesToExpand entry did not match anything (can happen if the subquery was larger \
+than one file, or due to overlap with another subquery): ${sq.toString()}`
     );
   }
   assert(foundCase, 'Query does not match any cases');
@@ -255,7 +266,7 @@ function addSubtreeForFilePath(tree, file, description, checkCollapsible) {
   return subtree;
 }
 
-function addSubtreeForTestPath(tree, test, isCollapsible) {
+function addSubtreeForTestPath(tree, test, description, testCreationStack, isCollapsible) {
   const subqueryTest = [];
   // To start, tree is suite:a,b:*
   // This loop goes from that -> suite:a,b:c,* -> suite:a,b:c,d,*
@@ -289,6 +300,8 @@ function addSubtreeForTestPath(tree, test, isCollapsible) {
       readableRelativeName: subqueryTest[subqueryTest.length - 1] + kBigSeparator + kWildcard,
       kWildcard,
       query,
+      description,
+      testCreationStack,
       collapsible: isCollapsible(query),
     };
   });
@@ -358,21 +371,21 @@ function insertLeaf(parent, query, t) {
   parent.children.set(key, leaf);
 }
 
-function dissolveLevelBoundaries(tree) {
+function dissolveSingleChildTrees(tree) {
   if ('children' in tree) {
-    if (tree.children.size === 1 && tree.description === undefined) {
+    const shouldDissolveThisTree =
+      tree.children.size === 1 && tree.query.depthInLevel !== 0 && tree.description === undefined;
+    if (shouldDissolveThisTree) {
       // Loops exactly once
       for (const [, child] of tree.children) {
-        if (child.query.level > tree.query.level) {
-          const newtree = dissolveLevelBoundaries(child);
-
-          return newtree;
-        }
+        // Recurse on child
+        return dissolveSingleChildTrees(child);
       }
     }
 
     for (const [k, child] of tree.children) {
-      const newChild = dissolveLevelBoundaries(child);
+      // Recurse on each child
+      const newChild = dissolveSingleChildTrees(child);
       if (newChild !== child) {
         tree.children.set(k, newChild);
       }

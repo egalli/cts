@@ -22,7 +22,7 @@ g.test('UnitTest_fixture').fn(async t0 => {
 
   g.test('test').fn(count);
   g.test('testp').
-  params([{ a: 1 }]).
+  cases([{ a: 1 }]).
   fn(count);
 
   await t0.run(g);
@@ -43,7 +43,7 @@ g.test('custom_fixture').fn(async t0 => {
     t.count();
   });
   g.test('testp').
-  params([{ a: 1 }]).
+  cases([{ a: 1 }]).
   fn(t => {
     t.count();
   });
@@ -84,6 +84,16 @@ g.test('stack').fn(async t0 => {
   }
 });
 
+g.test('no_fn').fn(t => {
+  const g = makeTestGroupForUnitTesting(UnitTest);
+
+  g.test('missing');
+
+  t.shouldThrow('Error', () => {
+    g.validate();
+  });
+});
+
 g.test('duplicate_test_name').fn(t => {
   const g = makeTestGroupForUnitTesting(UnitTest);
   g.test('abc').fn(() => {});
@@ -97,25 +107,25 @@ g.test('duplicate_test_params,none').fn(() => {
   {
     const g = makeTestGroupForUnitTesting(UnitTest);
     g.test('abc').
-    params([]).
+    cases([]).
     fn(() => {});
-    g.checkCaseNamesAndDuplicates();
+    g.validate();
   }
 
   {
     const g = makeTestGroupForUnitTesting(UnitTest);
     g.test('abc').fn(() => {});
-    g.checkCaseNamesAndDuplicates();
+    g.validate();
   }
 
   {
     const g = makeTestGroupForUnitTesting(UnitTest);
     g.test('abc').
-    params([
+    cases([
     { a: 1 } //
     ]).
     fn(() => {});
-    g.checkCaseNamesAndDuplicates();
+    g.validate();
   }
 });
 
@@ -123,25 +133,25 @@ g.test('duplicate_test_params,basic').fn(t => {
   {
     const g = makeTestGroupForUnitTesting(UnitTest);
     g.test('abc').
-    params([
+    cases([
     { a: 1 }, //
     { a: 1 }]).
 
     fn(() => {});
     t.shouldThrow('Error', () => {
-      g.checkCaseNamesAndDuplicates();
+      g.validate();
     });
   }
   {
     const g = makeTestGroupForUnitTesting(UnitTest);
     g.test('abc').
-    params([
+    cases([
     { a: 1, b: 3 }, //
     { b: 3, a: 1 }]).
 
     fn(() => {});
     t.shouldThrow('Error', () => {
-      g.checkCaseNamesAndDuplicates();
+      g.validate();
     });
   }
 });
@@ -149,13 +159,13 @@ g.test('duplicate_test_params,basic').fn(t => {
 g.test('duplicate_test_params,with_different_private_params').fn(t => {
   const g = makeTestGroupForUnitTesting(UnitTest);
   g.test('abc').
-  params([
+  cases([
   { a: 1, _b: 1 }, //
   { a: 1, _b: 2 }]).
 
   fn(() => {});
   t.shouldThrow('Error', () => {
-    g.checkCaseNamesAndDuplicates();
+    g.validate();
   });
 });
 
@@ -177,17 +187,46 @@ g.test('invalid_test_name').fn(t => {
 
 g.test('param_value,valid').fn(() => {
   const g = makeTestGroup(UnitTest);
-  g.test('a').params([{ x: JSON.stringify({ a: 1, b: 2 }) }]);
+  g.test('a').cases([{ x: JSON.stringify({ a: 1, b: 2 }) }]);
 });
 
 g.test('param_value,invalid').fn(t => {
   for (const badChar of ';=*') {
     const g = makeTestGroupForUnitTesting(UnitTest);
-    g.test('a').params([{ badChar }]);
+    g.test('a').cases([{ badChar }]);
     t.shouldThrow('Error', () => {
-      g.checkCaseNamesAndDuplicates();
+      g.validate();
     });
   }
+});
+
+g.test('subcases').fn(async t0 => {
+  const g = makeTestGroupForUnitTesting(UnitTest);
+  g.test('a').
+  subcases(() => [{ a: 1 }]).
+  fn(t => {
+    t.expect(t.params.a === 1, 'a must be 1');
+  });
+
+  function* gen({ a, b }) {
+    if (b === 2) {
+      yield { ret: 2 };
+    } else if (a === 1) {
+      yield { ret: 1 };
+    } else {
+      yield { ret: -1 };
+    }
+  }
+  g.test('b').
+  cases([{ a: 1 }, { b: 2 }]).
+  subcases(gen).
+  fn(t => {
+    const { a, b, ret } = t.params;
+    t.expect(a === 1 && ret === 1 || b === 2 && ret === 2);
+  });
+
+  const result = await t0.run(g);
+  t0.expect(Array.from(result.values()).every(v => v.status === 'pass'));
 });
 
 g.test('throws').fn(async t0 => {

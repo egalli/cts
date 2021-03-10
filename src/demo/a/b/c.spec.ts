@@ -6,7 +6,13 @@ import { UnitTest } from '../../../unittests/unit_test.js';
 
 export const g = makeTestGroup(UnitTest);
 
-g.test('f').fn(() => {});
+g.test('f')
+  .desc(
+    `Test plan for f
+    - Test stuff
+    - Test some more stuff`
+  )
+  .fn(() => {});
 
 g.test('f,g').fn(() => {});
 
@@ -36,4 +42,30 @@ g.test('statuses,fail').fn(t => {
 
 g.test('statuses,throw').fn(() => {
   unreachable('unreachable');
+});
+
+g.test('multiple_same_stack').fn(t => {
+  for (let i = 0; i < 3; ++i) {
+    t.fail(
+      i === 2
+        ? 'this should appear after deduplicated line'
+        : 'this should be "seen 2 times with identical stack"'
+    );
+  }
+});
+
+g.test('multiple_same_level').fn(t => {
+  t.fail('this should print a stack');
+  t.fail('this should print a stack');
+  t.fail('this should not print a stack');
+});
+
+g.test('lower_levels_hidden,before').fn(t => {
+  t.warn('warn - this should not print a stack');
+  t.fail('fail');
+});
+
+g.test('lower_levels_hidden,after').fn(t => {
+  t.fail('fail');
+  t.warn('warn - this should not print a stack');
 });

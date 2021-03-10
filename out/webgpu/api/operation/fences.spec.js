@@ -1,6 +1,8 @@
 /**
 * AUTO-GENERATED - DO NOT EDIT. Source: https://github.com/gpuweb/cts
-**/export const description = '';import { makeTestGroup } from '../../../common/framework/test_group.js';
+**/export const description = `
+TODO: fences are removed; replace still-relevant tests with equivalents for (multiple?) queues
+`;import { makeTestGroup } from '../../../common/framework/test_group.js';
 import { attemptGarbageCollection } from '../../../common/framework/util/collect_garbage.js';
 import { raceWithRejectOnTimeout } from '../../../common/framework/util/util.js';
 import { GPUTest } from '../../gpu_test.js';

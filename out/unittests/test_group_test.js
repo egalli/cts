@@ -8,16 +8,21 @@ import { UnitTest } from './unit_test.js';
 export class TestGroupTest extends UnitTest {
   async run(g) {
     const logger = new Logger(true);
-    for (const rc of await Promise.all(g.iterate())) {
-      const query = new TestQuerySingleCase('xx', ['yy'], rc.id.test, rc.id.params);
-      const [rec] = logger.record(query.toString());
-      await rc.run(rec);
+    for (const t of g.iterate()) {
+      for (const rc of t.iterate()) {
+        const query = new TestQuerySingleCase('xx', ['yy'], rc.id.test, rc.id.params);
+        const [rec] = logger.record(query.toString());
+        await rc.run(rec);
+      }
     }
     return logger.results;
   }
 
   expectCases(g, cases) {
-    const gcases = Array.from(g.iterate()).map(rc => rc.id);
+    const gcases = [];
+    for (const t of g.iterate()) {
+      gcases.push(...Array.from(t.iterate(), c => c.id));
+    }
     this.expect(objectEquals(gcases, cases));
   }}
 //# sourceMappingURL=test_group_test.js.map

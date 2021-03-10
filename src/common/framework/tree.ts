@@ -49,6 +49,7 @@ export interface TestSubtree<T extends TestQuery = TestQuery> {
   readonly children: Map<string, TestTreeNode>;
   readonly collapsible: boolean;
   description?: string;
+  readonly testCreationStack?: Error;
 }
 
 export interface TestTreeLeaf {
@@ -86,7 +87,7 @@ export class TestTree {
    * which is less needlessly verbose when displaying the tree in the standalone runner.
    */
   dissolveLevelBoundaries(): void {
-    const newRoot = dissolveLevelBoundaries(this.root);
+    const newRoot = dissolveSingleChildTrees(this.root);
     assert(newRoot === this.root);
   }
 
@@ -96,9 +97,16 @@ export class TestTree {
 
   static *iterateSubtreeCollapsedQueries(subtree: TestSubtree): IterableIterator<TestQuery> {
     for (const [, child] of subtree.children) {
-      if ('children' in child && !child.collapsible) {
-        yield* TestTree.iterateSubtreeCollapsedQueries(child);
+      if ('children' in child) {
+        // Is a subtree
+        if (!child.collapsible) {
+          yield* TestTree.iterateSubtreeCollapsedQueries(child);
+        } else if (child.children.size) {
+          // Don't yield empty subtrees (e.g. files with no tests)
+          yield child.query;
+        }
       } else {
+        // Is a leaf
         yield child.query;
       }
     }
@@ -204,14 +212,12 @@ export async function loadTreeForQuery(
       isCollapsible
     );
 
-    // TODO: If tree generation gets too slow, avoid actually iterating the cases in a file
-    // if there's no need to (based on the subqueriesToExpand).
     for (const t of spec.g.iterate()) {
       {
-        const queryL3 = new TestQuerySingleCase(suite, entry.file, t.id.test, t.id.params);
-        const orderingL3 = compareQueries(queryL3, queryToLoad);
-        if (orderingL3 === Ordering.Unordered || orderingL3 === Ordering.StrictSuperset) {
-          // Case is not matched by this query.
+        const queryL2 = new TestQueryMultiCase(suite, entry.file, t.testPath, {});
+        const orderingL2 = compareQueries(queryL2, queryToLoad);
+        if (orderingL2 === Ordering.Unordered) {
+          // Test path is not matched by this query.
           continue;
         }
       }
@@ -219,14 +225,29 @@ export async function loadTreeForQuery(
       // subtreeL2 is suite:a,b:c,d:*
       const subtreeL2: TestSubtree<TestQueryMultiCase> = addSubtreeForTestPath(
         subtreeL1,
-        t.id.test,
+        t.testPath,
+        t.description,
+        t.testCreationStack,
         isCollapsible
       );
 
-      // Leaf for case is suite:a,b:c,d:x=1;y=2
-      addLeafForCase(subtreeL2, t, isCollapsible);
+      // TODO: If tree generation gets too slow, avoid actually iterating the cases in a file
+      // if there's no need to (based on the subqueriesToExpand).
+      for (const c of t.iterate()) {
+        {
+          const queryL3 = new TestQuerySingleCase(suite, entry.file, c.id.test, c.id.params);
+          const orderingL3 = compareQueries(queryL3, queryToLoad);
+          if (orderingL3 === Ordering.Unordered || orderingL3 === Ordering.StrictSuperset) {
+            // Case is not matched by this query.
+            continue;
+          }
+        }
 
-      foundCase = true;
+        // Leaf for case is suite:a,b:c,d:x=1;y=2
+        addLeafForCase(subtreeL2, c, isCollapsible);
+
+        foundCase = true;
+      }
     }
   }
 
@@ -234,8 +255,8 @@ export async function loadTreeForQuery(
     const seen = seenSubqueriesToExpand[i];
     assert(
       seen,
-      `subqueriesToExpand entry did not match anything \
-(can happen due to overlap with another subquery): ${sq.toString()}`
+      `subqueriesToExpand entry did not match anything (can happen if the subquery was larger \
+than one file, or due to overlap with another subquery): ${sq.toString()}`
     );
   }
   assert(foundCase, 'Query does not match any cases');
@@ -295,6 +316,8 @@ function addSubtreeForFilePath(
 function addSubtreeForTestPath(
   tree: TestSubtree<TestQueryMultiTest>,
   test: readonly string[],
+  description: string | undefined,
+  testCreationStack: Error,
   isCollapsible: (sq: TestQuery) => boolean
 ): TestSubtree<TestQueryMultiCase> {
   const subqueryTest: string[] = [];
@@ -328,6 +351,8 @@ function addSubtreeForTestPath(
       readableRelativeName: subqueryTest[subqueryTest.length - 1] + kBigSeparator + kWildcard,
       kWildcard,
       query,
+      description,
+      testCreationStack,
       collapsible: isCollapsible(query),
     };
   });
@@ -402,21 +427,21 @@ function insertLeaf(parent: TestSubtree, query: TestQuerySingleCase, t: RunCase)
   parent.children.set(key, leaf);
 }
 
-function dissolveLevelBoundaries(tree: TestTreeNode): TestTreeNode {
+function dissolveSingleChildTrees(tree: TestTreeNode): TestTreeNode {
   if ('children' in tree) {
-    if (tree.children.size === 1 && tree.description === undefined) {
+    const shouldDissolveThisTree =
+      tree.children.size === 1 && tree.query.depthInLevel !== 0 && tree.description === undefined;
+    if (shouldDissolveThisTree) {
       // Loops exactly once
       for (const [, child] of tree.children) {
-        if (child.query.level > tree.query.level) {
-          const newtree = dissolveLevelBoundaries(child);
-
-          return newtree;
-        }
+        // Recurse on child
+        return dissolveSingleChildTrees(child);
       }
     }
 
     for (const [k, child] of tree.children) {
-      const newChild = dissolveLevelBoundaries(child);
+      // Recurse on each child
+      const newChild = dissolveSingleChildTrees(child);
       if (newChild !== child) {
         tree.children.set(k, newChild);
       }
